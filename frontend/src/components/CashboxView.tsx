@@ -16,6 +16,10 @@ import {
   CreditCard,
   Banknote,
   DollarSign,
+  TrendingDown,
+  TrendingUp,
+  Receipt,
+  Phone,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatMoney } from '@/lib/utils';
@@ -33,6 +37,8 @@ export const CashboxView: React.FC<CashboxViewProps> = ({
   quickExpenseTrigger,
 }) => {
   const { toast } = useToast();
+  const [subTab, setSubTab] = useState<'transactions' | 'debts'>('transactions');
+  const [debtFilter, setDebtFilter] = useState<'ALL' | 'CUSTOMERS' | 'SUPPLIERS'>('ALL');
   const [registers, setRegisters] = useState<CashRegister[]>([]);
   const [totalBalance, setTotalBalance] = useState(0);
   const [transactions, setTransactions] = useState<CashTransaction[]>([]);
@@ -41,13 +47,14 @@ export const CashboxView: React.FC<CashboxViewProps> = ({
   const [totalPayable, setTotalPayable] = useState(0);
   const [loading, setLoading] = useState(true);
 
-  // Form
+  // Form State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedRegisterId, setSelectedRegisterId] = useState('');
   const [type, setType] = useState('EXPENSE_TRANSPORT');
-  const [amount, setAmount] = useState<number>(30000);
+  const [amount, setAmount] = useState<number>(20000);
   const [partyName, setPartyName] = useState('');
   const [note, setNote] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const typeConfig: Record<string, { label: string; icon: any; color: string }> = {
     SALE_INCOME: { label: 'Savdo tushumi', icon: ArrowUpRight, color: 'text-emerald-600 bg-emerald-50' },
@@ -70,7 +77,7 @@ export const CashboxView: React.FC<CashboxViewProps> = ({
 
   useEffect(() => {
     if (quickExpenseTrigger) {
-      handleOpenModal('EXPENSE_TRANSPORT');
+      handleOpenModal('EXPENSE_TRANSPORT', 20000, '', 'Haydovchiga yo\'l kira');
     }
   }, [quickExpenseTrigger]);
 
@@ -98,224 +105,387 @@ export const CashboxView: React.FC<CashboxViewProps> = ({
     }
   };
 
-  const handleOpenModal = (presetType = 'EXPENSE_TRANSPORT') => {
+  const handleOpenModal = (
+    presetType = 'EXPENSE_TRANSPORT',
+    presetAmount = 20000,
+    presetParty = '',
+    presetNote = '',
+  ) => {
     setType(presetType);
-    setAmount(presetType === 'EXPENSE_TRANSPORT' ? 30000 : 100000);
-    setPartyName('');
-    setNote('');
+    setAmount(presetAmount);
+    setPartyName(presetParty);
+    setNote(presetNote);
     setIsModalOpen(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!amount || amount <= 0) {
+      toast('To\'g\'ri summa kiriting', 'error');
+      return;
+    }
+
     try {
+      setSubmitting(true);
       await api.createCashTransaction({
         cashRegisterId: selectedRegisterId,
         type,
-        amount: Number(amount),
-        partyName: partyName || undefined,
-        note: note || undefined,
+        amount,
+        partyName: partyName.trim() || undefined,
+        note: note.trim() || undefined,
       });
-      toast('Tranzaksiya muvaffaqiyatli bajarildi', 'success');
+
+      toast('Amal muvaffaqiyatli saqlandi!', 'success');
       setIsModalOpen(false);
       loadData();
       if (onRefreshGlobal) onRefreshGlobal();
     } catch (err: any) {
-      toast(err.message || 'Tranzaksiyani bajarishda xatolik', 'error');
+      toast(err.message || 'Tranzaksiya bajarilmadi', 'error');
+    } finally {
+      setSubmitting(false);
     }
   };
 
+  const filteredCounterparties = counterparties.filter((cp) => {
+    if (debtFilter === 'CUSTOMERS') return cp.balance > 0;
+    if (debtFilter === 'SUPPLIERS') return cp.balance < 0;
+    return true;
+  });
+
   return (
     <div className="space-y-5 pb-16 md:pb-0">
-      {/* Sarlavha & Tezkor Tugmalar */}
+      {/* Sarlavha & Tezkor Chiqim Tugmalari */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/80 shadow-xs">
         <div>
           <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
             <Wallet className="w-5 h-5 text-emerald-600" />
-            Kassa, Xarajatlar & Qarzlar
+            Kassa & Xarajatlar Daftari
           </h2>
           <p className="text-xs text-slate-700 mt-0.5">
-            Yo'l kira, ijara, maosh va qarz harakatlarini aniq qayd qilish
+            Naqd pul va karta hisobi, yo'l kira xarajatlari hamda qarz munosabatlari
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
-            onClick={() => handleOpenModal('EXPENSE_TRANSPORT')}
-            className="flex items-center gap-1.5 px-3 py-2 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer transition-all"
+            onClick={() =>
+              handleOpenModal(
+                'EXPENSE_TRANSPORT',
+                20000,
+                '',
+                'Laboga yo\'l kira',
+              )
+            }
+            className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white text-xs sm:text-sm font-bold rounded-xl shadow-xs transition-all cursor-pointer"
           >
-            <Truck className="w-3.5 h-3.5" />
-            <span>Yo'l Kira Kiritish</span>
+            <Truck className="w-4 h-4" />
+            <span>+ Yo'l kira kiritish</span>
           </button>
 
           <button
-            onClick={() => handleOpenModal('DEBT_GIVEN')}
-            className="flex items-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer transition-all"
+            onClick={() => handleOpenModal('EXPENSE_OTHER', 50000)}
+            className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white text-xs sm:text-sm font-bold rounded-xl shadow-xs transition-all cursor-pointer"
           >
-            <Users className="w-3.5 h-3.5" />
-            <span>Qarz Berish/Olish</span>
+            <Plus className="w-4 h-4" />
+            <span>Kirim / Chiqim</span>
           </button>
         </div>
       </div>
 
-      {/* Kassalar & Qarzdorlik Balansi Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/80 shadow-xs">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700">
-            Jami Mavjud Kassa
-          </span>
-          <div className="text-2xl font-black font-mono text-emerald-600 mt-1">
+      {/* Kassa Balanslari & Qarzlar Xulosasi */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* Jami Kassa */}
+        <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs">
+          <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+            <span>KASSADAGI JAMI PUL</span>
+            <Wallet className="w-4 h-4 text-emerald-600" />
+          </div>
+          <div className="text-2xl font-black font-mono text-emerald-600 mt-2">
             {formatMoney(totalBalance)}
           </div>
-          <div className="text-[11px] text-slate-700 mt-1">
-            Naqd + Karta terminali
+          <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-700">
+            {registers.map((r) => (
+              <span key={r.id} className="font-mono text-[11px]">
+                {r.name}: <strong>{formatMoney(r.balance)}</strong>
+              </span>
+            ))}
           </div>
         </div>
 
-        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/80 shadow-xs">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700">
-            Mijozlar Qarzi (Debitorlik)
-          </span>
-          <div className="text-2xl font-black font-mono text-blue-600 mt-1">
+        {/* Mijozlar Qarzi */}
+        <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs">
+          <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+            <span>MIJOZLAR QARZI (BIZGA)</span>
+            <Users className="w-4 h-4 text-indigo-600" />
+          </div>
+          <div className="text-2xl font-black font-mono text-indigo-700 mt-2">
             +{formatMoney(totalReceivable)}
           </div>
-          <div className="text-[11px] text-slate-700 mt-1">Bizga to'lanishi kerak</div>
+          <div className="mt-2 pt-2 border-t border-slate-100 text-xs text-slate-700">
+            Mijozlarimizdan kutilayotgan nasiyalar
+          </div>
         </div>
 
-        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/80 shadow-xs">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700">
-            Bizning Qarz (Kreditorlik)
-          </span>
-          <div className="text-2xl font-black font-mono text-rose-600 mt-1">
+        {/* Bizning Qarzimiz */}
+        <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs">
+          <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+            <span>BIZNING QARZIMIZ (ZAVODGA)</span>
+            <TrendingDown className="w-4 h-4 text-rose-600" />
+          </div>
+          <div className="text-2xl font-black font-mono text-rose-600 mt-2">
             -{formatMoney(totalPayable)}
           </div>
-          <div className="text-[11px] text-slate-700 mt-1">Yetkazib beruvchilarga</div>
+          <div className="mt-2 pt-2 border-t border-slate-100 text-xs text-slate-700">
+            Yetkazib beruvchilarga to'lanishi kerak
+          </div>
         </div>
       </div>
 
-      {/* Operatsiyalar va Qarzdorlar */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        {/* Kassa Operatsiyalari Jurnali */}
-        <div className="lg:col-span-8 bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-          <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-            <h3 className="font-bold text-slate-900 text-xs sm:text-sm">
-              Oxirgi Kassa Harakatlari
-            </h3>
-            <span className="text-xs text-slate-700 font-medium">
-              {transactions.length} ta yozuv
+      {/* Tablar: Kassa Harakatlari vs Qarzlar Kitobi */}
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+        <button
+          onClick={() => setSubTab('transactions')}
+          className={`px-4 py-2 text-xs sm:text-sm font-bold rounded-xl transition-all cursor-pointer ${
+            subTab === 'transactions'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          Kassa Harakatlari (Kirim-Chiqim)
+        </button>
+
+        <button
+          onClick={() => setSubTab('debts')}
+          className={`px-4 py-2 text-xs sm:text-sm font-bold rounded-xl transition-all cursor-pointer ${
+            subTab === 'debts'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          Qarzlar Kitobi (Mijozlar & Firmalar)
+        </button>
+      </div>
+
+      {subTab === 'transactions' ? (
+        /* Kassa Tranzaksiyalari Ro'yxati */
+        <div className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-xs">
+          <div className="p-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+              Barcha Pul Harakatlari
+            </span>
+            <span className="text-xs text-slate-700">
+              Jami: {transactions.length} ta operatsiya
             </span>
           </div>
 
-          <div className="divide-y divide-slate-100">
-            {transactions.map((tx) => {
-              const info = typeConfig[tx.type] || {
-                label: tx.type,
-                icon: HelpCircle,
-                color: 'text-slate-600 bg-slate-100',
-              };
-              const Icon = info.icon;
-              const isIncome = tx.direction === 'IN';
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs sm:text-sm">
+              <thead className="bg-slate-50/50 border-b border-slate-100 text-slate-700 font-bold uppercase text-[11px] tracking-wider">
+                <tr>
+                  <th className="py-3 px-4">Amal Turi</th>
+                  <th className="py-3 px-4">Kassa</th>
+                  <th className="py-3 px-4">Kimga / Kimdan</th>
+                  <th className="py-3 px-4">Izoh</th>
+                  <th className="py-3 px-4 text-right">Summa</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {transactions.map((tx) => {
+                  const cfg = typeConfig[tx.type] || {
+                    label: tx.type,
+                    icon: DollarSign,
+                    color: 'text-slate-600 bg-slate-50',
+                  };
+                  const Icon = cfg.icon;
+                  const isIncome = tx.direction === 'IN';
 
-              return (
-                <div
-                  key={tx.id}
-                  className="p-3 sm:p-3.5 hover:bg-slate-50/70 transition-colors flex items-center justify-between gap-3 text-xs"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div className={`p-2 rounded-xl shrink-0 ${info.color}`}>
-                      <Icon className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="font-bold text-slate-900">{info.label}</div>
-                      <div className="text-[11px] text-slate-700">
-                        {tx.partyName ? `${tx.partyName} • ` : ''}
-                        {tx.note || tx.cashRegister?.name}
-                      </div>
-                    </div>
-                  </div>
+                  return (
+                    <tr key={tx.id} className="hover:bg-slate-50/70 transition-colors">
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2">
+                          <div className={`p-1.5 rounded-lg ${cfg.color}`}>
+                            <Icon className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <div className="font-bold text-slate-900 text-xs sm:text-sm">
+                              {cfg.label}
+                            </div>
+                            <div className="text-[10px] text-slate-700">
+                              {new Date(tx.createdAt).toLocaleDateString('uz-UZ', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
 
-                  <div className="text-right">
-                    <div
-                      className={`font-mono font-bold text-xs sm:text-sm ${
-                        isIncome ? 'text-emerald-600' : 'text-rose-600'
-                      }`}
-                    >
-                      {isIncome ? `+${formatMoney(tx.amount)}` : `-${formatMoney(tx.amount)}`}
-                    </div>
-                    <div className="text-[10px] text-slate-700">
-                      {new Date(tx.createdAt).toLocaleTimeString('uz-UZ', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+                      <td className="py-3 px-4 text-xs font-medium text-slate-700">
+                        {tx.cashRegister?.name}
+                      </td>
+
+                      <td className="py-3 px-4 text-xs font-semibold text-slate-800">
+                        {tx.partyName || '—'}
+                      </td>
+
+                      <td className="py-3 px-4 text-xs text-slate-700 max-w-xs truncate">
+                        {tx.note || '—'}
+                      </td>
+
+                      <td className="py-3 px-4 text-right font-mono font-bold text-xs sm:text-sm">
+                        <span className={isIncome ? 'text-emerald-600' : 'text-slate-900'}>
+                          {isIncome ? '+' : '-'}
+                          {formatMoney(tx.amount)}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
-
-        {/* Nasiyadorlar Ro'yxati */}
-        <div className="lg:col-span-4 bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 sm:p-5 space-y-3">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-            <h3 className="font-bold text-slate-900 text-xs sm:text-sm flex items-center gap-1.5">
-              <Users className="w-4 h-4 text-indigo-600" />
-              Qarzdorlar Daftari
-            </h3>
+      ) : (
+        /* Qarzlar Kitobi */
+        <div className="space-y-4">
+          {/* Filtr Chiplari */}
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setDebtFilter('ALL')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                debtFilter === 'ALL'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              Barcha Hamkorlar
+            </button>
+            <button
+              onClick={() => setDebtFilter('CUSTOMERS')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                debtFilter === 'CUSTOMERS'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              Mijozlarimiz (Bizga Qarzdorlar)
+            </button>
+            <button
+              onClick={() => setDebtFilter('SUPPLIERS')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                debtFilter === 'SUPPLIERS'
+                  ? 'bg-rose-600 text-white shadow-xs'
+                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              Yetkazuvchilar (Biz Qarzdormiz)
+            </button>
           </div>
 
-          <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
-            {counterparties.map((cp) => {
-              const isDebtor = cp.balance > 0;
-              const isCreditor = cp.balance < 0;
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {filteredCounterparties.map((cp) => {
+              const isReceivable = cp.balance > 0;
+              const isPayable = cp.balance < 0;
 
               return (
                 <div
                   key={cp.id}
-                  className="p-3 bg-slate-50 border border-slate-100 rounded-xl space-y-0.5 text-xs"
+                  className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs flex flex-col justify-between space-y-3"
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-900">{cp.name}</span>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h4 className="font-bold text-slate-900 text-sm">{cp.name}</h4>
+                      {cp.phone && (
+                        <span className="text-[11px] text-slate-700 flex items-center gap-1 mt-0.5">
+                          <Phone className="w-3 h-3 text-slate-400" />
+                          {cp.phone}
+                        </span>
+                      )}
+                    </div>
                     <span
-                      className={`font-mono font-bold ${
-                        isDebtor
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        isReceivable
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : isPayable
+                          ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                          : 'bg-slate-100 text-slate-700'
+                      }`}
+                    >
+                      {isReceivable
+                        ? 'Bizga qarzdor'
+                        : isPayable
+                        ? 'Biz qarzdormiz'
+                        : 'Hisob yopiq'}
+                    </span>
+                  </div>
+
+                  <div className="flex items-baseline justify-between pt-2 border-t border-slate-100">
+                    <span className="text-xs text-slate-700 font-medium">Balans:</span>
+                    <span
+                      className={`text-base font-black font-mono ${
+                        isReceivable
                           ? 'text-emerald-600'
-                          : isCreditor
+                          : isPayable
                           ? 'text-rose-600'
                           : 'text-slate-700'
                       }`}
                     >
-                      {isDebtor
+                      {isReceivable
                         ? `+${formatMoney(cp.balance)}`
-                        : isCreditor
+                        : isPayable
                         ? `-${formatMoney(Math.abs(cp.balance))}`
                         : '0 so\'m'}
                     </span>
                   </div>
-                  <div className="text-[11px] text-slate-700">
-                    {cp.phone || (isDebtor ? 'Do\'kondan qarzdor' : 'Yetkazib beruvchi')}
-                  </div>
+
+                  {/* Tezkor To'lov / Qarz qaytarish tugmasi */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isReceivable) {
+                        handleOpenModal(
+                          'DEBT_COLLECTED',
+                          Math.abs(cp.balance),
+                          cp.name,
+                          'Qarz qaytarildi',
+                        );
+                      } else {
+                        handleOpenModal(
+                          'DEBT_REPAID',
+                          Math.abs(cp.balance),
+                          cp.name,
+                          'Zavodga qarz to\'landi',
+                        );
+                      }
+                    }}
+                    className="w-full py-2 bg-slate-50 hover:bg-slate-100 text-slate-800 text-xs font-bold rounded-xl border border-slate-200 cursor-pointer transition-colors"
+                  >
+                    {isReceivable ? 'Qarzni qabul qilish' : 'Qarzni to\'lash'}
+                  </button>
                 </div>
               );
             })}
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Tranzaksiya Modali */}
+      {/* Tranzaksiya Modali (Tezkor Chiplar Bilan) */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
           <div className="bg-white rounded-2xl max-w-md w-full border border-slate-200 p-5 shadow-xl animate-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
-              <h3 className="font-bold text-slate-900 text-sm">
+              <h3 className="font-bold text-slate-900 text-sm sm:text-base">
                 Kassa Kirim / Chiqim Amali
               </h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 p-1">
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-3">
+            <form onSubmit={handleSubmit} className="space-y-3.5">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   Operatsiya Turi *
@@ -323,7 +493,7 @@ export const CashboxView: React.FC<CashboxViewProps> = ({
                 <SelectInput
                   value={type}
                   onChange={(e) => setType(e.target.value)}
-                  className="font-semibold"
+                  className="font-semibold text-xs"
                 >
                   <optgroup label="Operatsion Xarajatlar (Sof foydadan ayriladi)">
                     <option value="EXPENSE_TRANSPORT">Yo'l kira / Logistika (Transport)</option>
@@ -346,11 +516,12 @@ export const CashboxView: React.FC<CashboxViewProps> = ({
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Kassa
+                  Qaysi Kassadan? *
                 </label>
                 <SelectInput
                   value={selectedRegisterId}
                   onChange={(e) => setSelectedRegisterId(e.target.value)}
+                  className="text-xs"
                 >
                   {registers.map((r) => (
                     <option key={r.id} value={r.id}>
@@ -360,16 +531,31 @@ export const CashboxView: React.FC<CashboxViewProps> = ({
                 </SelectInput>
               </div>
 
+              {/* Summa & Tezkor Chiplar */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Summa (so'mda) *
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-semibold text-slate-700">
+                    Summa (so'mda) *
+                  </label>
+                </div>
                 <NumberInput
-                  placeholder="Masalan: 50 000"
+                  placeholder="Masalan: 20 000"
                   value={amount}
                   onChange={(val) => setAmount(val)}
                   className="w-full text-base font-bold font-mono"
                 />
+                <div className="flex items-center gap-1.5 mt-1.5 overflow-x-auto scrollbar-none">
+                  {[10000, 20000, 30000, 50000, 100000, 200000].map((val) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => setAmount(val)}
+                      className="text-[10px] px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold cursor-pointer shrink-0 font-mono"
+                    >
+                      +{val.toLocaleString()}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div>
@@ -381,20 +567,20 @@ export const CashboxView: React.FC<CashboxViewProps> = ({
                   placeholder="Masalan: Haydovchi Akmal"
                   value={partyName}
                   onChange={(e) => setPartyName(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Izoh
+                  Izoh (Ixtiyoriy)
                 </label>
                 <input
                   type="text"
                   placeholder="Masalan: Gazlangan ichimliklar tashish xarajati"
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
 
@@ -408,9 +594,10 @@ export const CashboxView: React.FC<CashboxViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white rounded-xl shadow-xs cursor-pointer"
+                  disabled={submitting}
+                  className="px-5 py-2 text-xs font-bold bg-slate-900 hover:bg-slate-800 active:scale-95 text-white rounded-xl shadow-xs cursor-pointer disabled:opacity-50 transition-all"
                 >
-                  Tasdiqlash
+                  {submitting ? 'Saqlanmoqda...' : 'Tasdiqlash'}
                 </button>
               </div>
             </form>

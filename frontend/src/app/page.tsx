@@ -60,7 +60,11 @@ export default function Home() {
         {/* Asosiy Kontent Maydoni */}
         <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-5 sm:py-7">
           {activeTab === 'dashboard' && (
-            <DashboardView onNavigate={(tab) => setActiveTab(tab)} />
+            <DashboardView
+              onNavigate={(tab) => setActiveTab(tab)}
+              onOpenQuickSale={handleOpenQuickSale}
+              onOpenQuickExpense={handleOpenQuickExpense}
+            />
           )}
           {activeTab === 'products' && <ProductsView />}
           {activeTab === 'warehouses' && <WarehousesView />}

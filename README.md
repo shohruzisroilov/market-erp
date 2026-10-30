@@ -80,3 +80,4 @@ npm run start
 * **Inventarizatsiya:** Haqiqiy qoldiqni sanash, kamomad va ortiqchalikni avtomatik hisoblab balansni to'g'rilash.
 * **Kassa va Xarajatlar:** Yo'l kira / logistika, ijara, maosh va qarz munosabatlarini yuritish.
 * **Hisobotlar:** P&L (Sof foyda), Qoldiqlar tahlili va Savdo aylanmasi.
+

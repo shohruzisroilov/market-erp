@@ -9,6 +9,9 @@ import {
   TrendingDown,
   TrendingUp,
   X,
+  Search,
+  Package,
+  AlertTriangle,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatMoney } from '@/lib/utils';
@@ -27,6 +30,8 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ onRefreshGlobal })
   const [subWarehouses, setSubWarehouses] = useState<SubWarehouse[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [auditSearch, setAuditSearch] = useState('');
 
   // Form
   const [subWarehouseId, setSubWarehouseId] = useState('');
@@ -66,6 +71,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ onRefreshGlobal })
 
   const handleOpenModal = () => {
     setNote('');
+    setAuditSearch('');
     const initialItems = products.map((p) => ({
       productId: p.id,
       actualPacks: 0,
@@ -81,23 +87,47 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ onRefreshGlobal })
     setAuditItems(updated);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // 1) Qoralama sifatida saqlash
+  const handleSaveDraft = async () => {
     try {
+      setSubmitting(true);
       await api.createInventoryAudit({
         subWarehouseId,
         note,
         items: auditItems,
       });
-      toast('Sanash hujjati tuzildi (kutilmoqda)', 'success');
+      toast('Sanash qoralamasi saqlandi', 'info');
       setIsModalOpen(false);
       loadData();
     } catch (err: any) {
       toast(err.message || 'Sanash yaratishda xatolik', 'error');
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  const handleComplete = async (id: string) => {
+  // 2) Darhol Tasdiqlash & Qoldiqni To'g'rilash (1-KLIKDA YAKUNLASH)
+  const handleSaveAndComplete = async () => {
+    try {
+      setSubmitting(true);
+      const created = await api.createInventoryAudit({
+        subWarehouseId,
+        note,
+        items: auditItems,
+      });
+      await api.completeInventoryAudit(created.id);
+      toast('Ombor qoldiqlari sanalgan haqiqiy songa to\'g\'rilandi!', 'success');
+      setIsModalOpen(false);
+      loadData();
+      if (onRefreshGlobal) onRefreshGlobal();
+    } catch (err: any) {
+      toast(err.message || 'Sanashni to\'g\'rilashda xatolik', 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleCompleteExisting = async (id: string) => {
     try {
       await api.completeInventoryAudit(id);
       toast('Ombor qoldiqlari haqiqiy sanalgan songa to\'g\'rilandi!', 'success');
@@ -126,7 +156,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ onRefreshGlobal })
           onClick={handleOpenModal}
           className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white text-xs sm:text-sm font-bold rounded-xl shadow-xs transition-all cursor-pointer"
         >
-          <Plus className="w-4 h-4" />
+          <Plus className="w-4 h-4 stroke-[3]" />
           <span>Yangi Qayta Sanash</span>
         </button>
       </div>
@@ -208,10 +238,11 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ onRefreshGlobal })
                       <td className="py-3 px-4 text-right">
                         {!isCompleted && (
                           <button
-                            onClick={() => handleComplete(a.id)}
-                            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white text-xs font-bold rounded-lg shadow-xs cursor-pointer"
+                            onClick={() => handleCompleteExisting(a.id)}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold rounded-lg shadow-xs cursor-pointer flex items-center gap-1 ml-auto"
                           >
-                            Tasdiqlash & Qoldiqni to'g'rilash
+                            <CheckCircle className="w-3.5 h-3.5" />
+                            <span>To'g'rilash</span>
                           </button>
                         )}
                       </td>
@@ -229,15 +260,23 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ onRefreshGlobal })
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/40 backdrop-blur-xs">
           <div className="bg-white rounded-2xl max-w-xl w-full border border-slate-200 p-5 shadow-xl animate-in zoom-in-95 duration-150 max-h-[92vh] flex flex-col">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
-              <h3 className="font-bold text-slate-900 text-sm sm:text-base">
-                Qayta Sanash Hujjatini Tuzish
-              </h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 p-1">
+              <div>
+                <h3 className="font-bold text-slate-900 text-sm sm:text-base">
+                  Haqiqiy Qoldiqni Sanash
+                </h3>
+                <span className="text-[11px] text-slate-700">
+                  Sovutgichdagi bor tovarlarni sanab kiriting
+                </span>
+              </div>
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="overflow-y-auto space-y-3.5 flex-1 pr-1">
+            <div className="overflow-y-auto space-y-3.5 flex-1 pr-1">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -249,7 +288,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ onRefreshGlobal })
                   >
                     {subWarehouses.map((sub) => (
                       <option key={sub.id} value={sub.id}>
-                        {sub.name} ({sub.warehouse?.name})
+                        {sub.name}
                       </option>
                     ))}
                   </SelectInput>
@@ -269,23 +308,41 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ onRefreshGlobal })
                 </div>
               </div>
 
-              {/* Sanalgan blok va ortiqcha donalar */}
+              {/* Ichimliklar Ro'yxati */}
               <div className="space-y-2 pt-1">
-                <span className="text-xs font-bold text-slate-800 uppercase block">
-                  Haqiqiy Sanalgan Blok va Ortiqcha Donalar
-                </span>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-800 uppercase block">
+                    Sanalgan Blok va Donalar
+                  </span>
+                  <div className="w-48">
+                    <input
+                      type="text"
+                      placeholder="Ichimlikni qidirish..."
+                      value={auditSearch}
+                      onChange={(e) => setAuditSearch(e.target.value)}
+                      className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    />
+                  </div>
+                </div>
 
                 <div className="space-y-2 max-h-[350px] overflow-y-auto pr-1">
                   {auditItems.map((item, idx) => {
                     const prod = products.find((p) => p.id === item.productId);
                     if (!prod) return null;
+                    if (
+                      auditSearch &&
+                      !prod.name.toLowerCase().includes(auditSearch.toLowerCase())
+                    ) {
+                      return null;
+                    }
+
                     const totalCounted =
                       (item.actualPacks || 0) * prod.pcsPerPack + (item.actualUnits || 0);
 
                     return (
                       <div
                         key={idx}
-                        className="p-3 bg-slate-50/80 border border-slate-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs"
+                        className="p-3 bg-slate-50/90 border border-slate-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs"
                       >
                         <div>
                           <div className="font-bold text-slate-900">{prod.name}</div>
@@ -296,32 +353,42 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ onRefreshGlobal })
 
                         <div className="flex items-center gap-2">
                           <div>
-                            <span className="text-[11px] text-slate-700 block">Sanalgan Blok</span>
+                            <span className="text-[10px] text-slate-700 font-semibold block">
+                              Sanalgan Blok
+                            </span>
                             <div className="w-20">
                               <NumberInput
                                 placeholder="Blok"
                                 value={item.actualPacks}
-                                onChange={(val) => handleItemChange(idx, 'actualPacks', val)}
+                                onChange={(val) =>
+                                  handleItemChange(idx, 'actualPacks', val)
+                                }
                                 className="py-1 px-2 text-xs font-bold"
                               />
                             </div>
                           </div>
 
                           <div>
-                            <span className="text-[11px] text-slate-700 block">Ortiqcha Dona</span>
+                            <span className="text-[10px] text-slate-700 font-semibold block">
+                              Ortiqcha Dona
+                            </span>
                             <div className="w-20">
                               <NumberInput
                                 placeholder="Dona"
                                 value={item.actualUnits}
-                                onChange={(val) => handleItemChange(idx, 'actualUnits', val)}
+                                onChange={(val) =>
+                                  handleItemChange(idx, 'actualUnits', val)
+                                }
                                 className="py-1 px-2 text-xs font-bold"
                               />
                             </div>
                           </div>
 
-                          <div className="text-right min-w-[70px]">
-                            <span className="text-[11px] text-slate-700 block">Jami</span>
-                            <span className="font-bold font-mono text-indigo-700 text-sm">
+                          <div className="text-right min-w-[75px] pl-2 border-l border-slate-200">
+                            <span className="text-[10px] text-slate-700 font-semibold block">
+                              Jami sanaldi
+                            </span>
+                            <span className="font-bold font-mono text-indigo-700 text-xs sm:text-sm">
                               {totalCounted} dona
                             </span>
                           </div>
@@ -331,23 +398,39 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ onRefreshGlobal })
                   })}
                 </div>
               </div>
+            </div>
 
-              <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
-                >
-                  Bekor qilish
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-xl shadow-xs cursor-pointer"
-                >
-                  Hujjatni Saqlash
-                </button>
-              </div>
-            </form>
+            {/* Pastki Amallar: 1-Klikda Tasdiqlash yoki Qoralama */}
+            <div className="pt-3 border-t border-slate-100 flex items-center gap-2 mt-2">
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="px-3.5 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+              >
+                Bekor qilish
+              </button>
+
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={handleSaveDraft}
+                className="px-3.5 py-2.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 active:scale-95 rounded-xl cursor-pointer transition-all"
+              >
+                Qoralama
+              </button>
+
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={handleSaveAndComplete}
+                className="flex-1 py-2.5 px-4 text-xs sm:text-sm font-bold bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <CheckCircle className="w-4 h-4" />
+                <span>
+                  {submitting ? 'To\'g\'rilanmoqda...' : 'Tasdiqlash & Qoldiqni To\'g\'rilash'}
+                </span>
+              </button>
+            </div>
           </div>
         </div>
       )}
