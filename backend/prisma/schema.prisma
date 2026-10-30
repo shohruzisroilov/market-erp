@@ -1,0 +1,263 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// -------------------------------------------------------------
+// 1. Mahsulotlar (Katalog)
+// -------------------------------------------------------------
+model Product {
+  id             String   @id @default(uuid())
+  name           String   // Ichimlik nomi (masalan: Coca-Cola 0.5L)
+  category       String   // Kategoriya (Gazlangan, Sharbat, Suv, Energetik)
+  barcode        String?  @unique
+  pcsPerPack     Int      @default(12) // 1 blokdagi donalar soni (masalan, 12 yoki 24)
+  costPrice      Float    @default(0)  // 1 dona mahsulotning kelish tannarxi
+  sellPriceUnit  Float    @default(0)  // 1 dona chakana sotish narxi
+  sellPricePack  Float    @default(0)  // 1 blok ulgurji sotish narxi
+  minStockAlert  Int      @default(24) // Minimal ogohlantirish qoldig'i (donada)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  stockItems     StockItem[]
+  purchaseItems  PurchaseItem[]
+  saleItems      SaleItem[]
+  auditItems     InventoryAuditItem[]
+
+  @@map("products")
+}
+
+// -------------------------------------------------------------
+// 2. Omborlar va Sub-omborlar (Joylashuvlar)
+// -------------------------------------------------------------
+model Warehouse {
+  id             String         @id @default(uuid())
+  name           String         // Masalan: "Markaziy Ombor", "Filial Ombor"
+  address        String?
+  isDefault      Boolean        @default(false)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  subWarehouses  SubWarehouse[]
+
+  @@map("warehouses")
+}
+
+model SubWarehouse {
+  id             String            @id @default(uuid())
+  warehouseId    String
+  name           String            // Masalan: "Sovutgich-1", "Vitrina zali", "A-seksiya 1-polka"
+  description    String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  warehouse      Warehouse         @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  stockItems     StockItem[]
+  purchases      PurchaseInvoice[]
+  sales          SaleInvoice[]
+  audits         InventoryAudit[]
+
+  @@map("sub_warehouses")
+}
+
+// -------------------------------------------------------------
+// 3. Qoldiqlar (Har bir sub-ombordagi dona soni)
+// -------------------------------------------------------------
+model StockItem {
+  id              String       @id @default(uuid())
+  productId       String
+  subWarehouseId  String
+  quantityInUnits Int          @default(0) // Saqlanadigan birlik: Jami donalar soni
+  updatedAt       DateTime     @updatedAt
+
+  product         Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  subWarehouse    SubWarehouse @relation(fields: [subWarehouseId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, subWarehouseId])
+  @@map("stock_items")
+}
+
+// -------------------------------------------------------------
+// 4. Xaridlar (Kirim hujjatlari)
+// -------------------------------------------------------------
+model PurchaseInvoice {
+  id             String         @id @default(uuid())
+  invoiceNumber  String         @unique // Masalan: "XARID-20261030-001"
+  supplierName   String         // Yetkazib beruvchi nomi
+  subWarehouseId String         // Qaysi sub-omborga kirim qilinmoqda
+  status         String         @default("DRAFT") // "DRAFT" yoki "COMPLETED"
+  totalAmount    Float          @default(0)
+  paidAmount     Float          @default(0)
+  debtAmount     Float          @default(0) // totalAmount - paidAmount
+  note           String?
+  completedAt    DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  subWarehouse   SubWarehouse   @relation(fields: [subWarehouseId], references: [id])
+  items          PurchaseItem[]
+
+  @@map("purchase_invoices")
+}
+
+model PurchaseItem {
+  id                String          @id @default(uuid())
+  purchaseInvoiceId String
+  productId         String
+  packQuantity      Int             @default(0) // Kiritilgan bloklar soni
+  unitQuantity      Int             @default(0) // Kiritilgan qo'shimcha donalar soni
+  totalUnits        Int             @default(0) // Jami donalar = packQuantity * pcsPerPack + unitQuantity
+  unitCost          Float           @default(0) // 1 dona xarid tannarxi
+  totalCost         Float           @default(0) // totalUnits * unitCost
+
+  purchaseInvoice   PurchaseInvoice @relation(fields: [purchaseInvoiceId], references: [id], onDelete: Cascade)
+  product           Product         @relation(fields: [productId], references: [id])
+
+  @@map("purchase_items")
+}
+
+// -------------------------------------------------------------
+// 5. Savdolar (Sotish / Chiqim hujjatlari)
+// -------------------------------------------------------------
+model SaleInvoice {
+  id              String     @id @default(uuid())
+  invoiceNumber   String     @unique // Masalan: "SAVDO-20261030-001"
+  customerName    String     @default("Chakana xaridor")
+  subWarehouseId  String     // Qaysi sub-ombordan sotilmoqda
+  status          String     @default("DRAFT") // "DRAFT" yoki "COMPLETED"
+  totalAmount     Float      @default(0) // Sotish summasi
+  paidAmount      Float      @default(0) // Naqd/Karta to'langan summa
+  debtAmount      Float      @default(0) // Qarz/Nasiya summasi
+  paymentMethod   String     @default("CASH") // "CASH", "CARD", "DEBT", "MIXED"
+  totalCostAmount Float      @default(0) // Sotilgan tovarlarning tannarxi (COGS)
+  grossProfit     Float      @default(0) // totalAmount - totalCostAmount (Yalpi foyda)
+  note            String?
+  completedAt     DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  subWarehouse    SubWarehouse @relation(fields: [subWarehouseId], references: [id])
+  items           SaleItem[]
+
+  @@map("sale_invoices")
+}
+
+model SaleItem {
+  id              String      @id @default(uuid())
+  saleInvoiceId   String
+  productId       String
+  packQuantity    Int         @default(0) // Sotilgan bloklar soni
+  unitQuantity    Int         @default(0) // Sotilgan donalar soni
+  totalUnits      Int         @default(0) // Jami donalar soni
+  unitPrice       Float       @default(0) // 1 dona sotish narxi
+  totalAmount     Float       @default(0) // totalUnits * unitPrice
+  unitCostAtSale  Float       @default(0) // O'sha paytdagi 1 dona tannarx
+  totalCostAtSale Float       @default(0) // totalUnits * unitCostAtSale
+
+  saleInvoice     SaleInvoice @relation(fields: [saleInvoiceId], references: [id], onDelete: Cascade)
+  product         Product     @relation(fields: [productId], references: [id])
+
+  @@map("sale_items")
+}
+
+// -------------------------------------------------------------
+// 6. Inventarizatsiya (Sanalgan haqiqiy qoldiqni to'g'rilash)
+// -------------------------------------------------------------
+model InventoryAudit {
+  id                   String               @id @default(uuid())
+  auditNumber          String               @unique // Masalan: "INV-20261030-001"
+  subWarehouseId       String
+  status               String               @default("DRAFT") // "DRAFT" yoki "COMPLETED"
+  totalDifferenceValue Float                @default(0) // Musbat = Ortiqcha daromad, Manfiy = Kamomad zarar
+  note                 String?
+  completedAt          DateTime?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  subWarehouse         SubWarehouse         @relation(fields: [subWarehouseId], references: [id])
+  items                InventoryAuditItem[]
+
+  @@map("inventory_audits")
+}
+
+model InventoryAuditItem {
+  id                 String         @id @default(uuid())
+  inventoryAuditId   String
+  productId          String
+  systemQuantity     Int            @default(0) // Tizimdagi qoldiq (dona)
+  actualPacks        Int            @default(0) // Haqiqiy sanalgan blok
+  actualUnits        Int            @default(0) // Haqiqiy sanalgan ortiqcha dona
+  actualQuantity     Int            @default(0) // actualPacks * pcsPerPack + actualUnits
+  differenceQuantity Int            @default(0) // actualQuantity - systemQuantity
+  unitCost           Float          @default(0) // Tannarx
+  differenceValue    Float          @default(0) // differenceQuantity * unitCost
+
+  inventoryAudit     InventoryAudit @relation(fields: [inventoryAuditId], references: [id], onDelete: Cascade)
+  product            Product        @relation(fields: [productId], references: [id])
+
+  @@map("inventory_audit_items")
+}
+
+// -------------------------------------------------------------
+// 7. Kassa va Pul Oqimlari (Kirim-Chiqim, Qarzlar, Xarajatlar)
+// -------------------------------------------------------------
+model CashRegister {
+  id           String            @id @default(uuid())
+  name         String            // Masalan: "Asosiy Kassa (Naqd)", "Bank Hisobi / Terminal"
+  balance      Float             @default(0)
+  isDefault    Boolean           @default(false)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  transactions CashTransaction[]
+
+  @@map("cash_registers")
+}
+
+model CashTransaction {
+  id              String       @id @default(uuid())
+  cashRegisterId  String
+  type            String       // Quyidagi turlar:
+                               // "SALE_INCOME" (Savdo tushumi)
+                               // "PURCHASE_PAYMENT" (Xarid to'lovi)
+                               // "EXPENSE_TRANSPORT" (Yo'l kira / Logistika)
+                               // "EXPENSE_RENT" (Ombor/Do'kon ijarasi)
+                               // "EXPENSE_SALARY" (Xodimlar oyligi)
+                               // "EXPENSE_UTILITIES" (Kommunal to'lovlar)
+                               // "EXPENSE_OTHER" (Boshqa operatsion xarajat)
+                               // "DEBT_GIVEN" (Uchinchi shaxsga qarz berish - chiqim)
+                               // "DEBT_COLLECTED" (Berilgan qarzning qaytishi - kirim)
+                               // "DEBT_TAKEN" (Qarz olish - kirim)
+                               // "DEBT_REPAID" (Olingan qarzni to'lash - chiqim)
+  direction       String       // "IN" (Kirim) yoki "OUT" (Chiqim)
+  amount          Float        // Tranzaksiya summasi
+  category        String       // "OPERATING", "FINANCING", "TRADE"
+  partyName       String?      // Xaridor, Yetkazib beruvchi yoki Qarz oluvchi/beruvchi
+  relatedId       String?      // Bog'liq Savdo, Xarid yoki Qarz ID
+  note            String?      // Izoh (masalan: "Labo mashinasiga yo'l kira to'landi")
+  createdAt       DateTime     @default(now())
+
+  cashRegister    CashRegister @relation(fields: [cashRegisterId], references: [id], onDelete: Cascade)
+
+  @@map("cash_transactions")
+}
+
+// -------------------------------------------------------------
+// 8. Qarzdorlik Kitobi (Kontragentlar: Mijozlar va Hamkorlar)
+// -------------------------------------------------------------
+model Counterparty {
+  id        String   @id @default(uuid())
+  name      String   // Shaxs yoki tashkilot nomi
+  phone     String?
+  type      String   @default("CUSTOMER") // "CUSTOMER", "SUPPLIER", "OTHER"
+  balance   Float    @default(0) // Musbat: bizga qarzdor; Manfiy: biz undan qarzdormiz
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("counterparties")
+}
+
